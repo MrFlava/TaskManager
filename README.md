@@ -15,13 +15,7 @@ A Flask-based task management system with PostgreSQL database, Docker deployment
 
 ### Using Docker (Recommended)
 
-1. **Run the setup script:**
-   ```bash
-   chmod +x setup.sh
-   ./setup.sh
-   ```
-
-2. **Or manually:**
+1. **Manually:**
    ```bash
    # Create .env file
    cp .env.example .env
@@ -36,12 +30,11 @@ A Flask-based task management system with PostgreSQL database, Docker deployment
    docker-compose exec web flask db upgrade
    ```
 
-3. **Test the API:**
+2. **Test the API:**
    ```bash
    curl http://localhost:8001/
    curl http://localhost:8001/api/
-   curl http://localhost:8001/api/health
-   curl http://localhost:8001/api/test/create-sample-data
+   curl http://localhost:8001/api/health/
    ```
 
 ### Manual Setup
@@ -62,7 +55,7 @@ A Flask-based task management system with PostgreSQL database, Docker deployment
 
 4. **Run the app:**
    ```bash
-   flask run
+   flask run --host=0.0.0.0 --port=8001
    ```
 
 ## API Endpoints
@@ -222,15 +215,34 @@ docker-compose exec db psql -U taskuser -d taskmanager
 
 ## Environment Variables
 
+Using a `.env` file is **optional**.
+
+- When you run via **docker-compose**, variables are already provided in `docker-compose.yml`.
+- When you run locally via the **Flask CLI** (`flask run`, `flask db ...`), a `.env` file is a convenient way to provide configuration without exporting variables in your shell.
+
+### Recommended variables
+
 Create a `.env` file with:
 
 ```env
 FLASK_APP=main.py
 FLASK_ENV=development
 FLASK_DEBUG=1
-SECRET_KEY=your-secret-key-here
 DATABASE_URL=postgresql://taskuser:taskpass@localhost:5432/taskmanager
+SECRET_KEY=change-me
 ```
+
+Notes:
+
+- **`DATABASE_URL`** is the most important variable (switch DBs without changing code).
+- **`SECRET_KEY`** becomes important once you use sessions/auth/CSRF.
+
+## Pydantic Schemas
+
+Request validation and response formatting use **Pydantic** schemas located in `app/api/schemas.py`.
+
+- **[validation]** Invalid request bodies / query parameters return **422** with Pydantic error details.
+- **[responses]** Successful responses are serialized via response schema models (for consistent shapes).
 
 ## Development
 
@@ -240,8 +252,23 @@ DATABASE_URL=postgresql://taskuser:taskpass@localhost:5432/taskmanager
 3. Apply migration: `flask db upgrade`
 
 ### Adding new endpoints
-1. Update `app.py` with new routes
+1. Add/update Blueprints in `app/api/` (for example `users.py`, `projects.py`, `tasks.py`)
 2. Restart the container: `docker-compose restart web`
+
+## Tests
+
+API tests are written with **pytest** under `tests/` and use **mocks** (no real database required).
+
+Run locally:
+
+```bash
+pytest -q
+```
+
+Notes:
+
+- **[app context]** `tests/conftest.py` creates the Flask app via `main.create_app()` and pushes an application context.
+- **[mocking]** Tests monkeypatch `Model.query` and `db.session` to control behavior and assert commits/deletes.
 
 ## Database Access
 
