@@ -1,5 +1,19 @@
 from flask import Blueprint, jsonify, request
+from pydantic import ValidationError
+
 from app.models import db, User
+from app.api.schemas import (
+    UserCreateIn,
+    UserCreatedOut,
+    UserDeleteIn,
+    UserDeletedOut,
+    UserOut,
+    UserSingleOut,
+    UsersListOut,
+    UserUpdateIn,
+    UserUpdatedOut,
+    validation_error_payload,
+)
 
 # Create Blueprint for user routes
 users_bp = Blueprint('users', __name__)
@@ -12,28 +26,25 @@ def users():
         """List all users"""
         try:
             users = User.query.all()
-            return jsonify({
-                'status': 'success',
-                'count': len(users),
-                'users': [user.to_dict() for user in users]
-            })
+            payload = UsersListOut(
+                count=len(users),
+                users=[UserOut(**user.to_dict()) for user in users],
+            ).model_dump()
+            return jsonify(payload)
         except Exception as e:
             return jsonify({'status': 'error', 'message': str(e)}), 500
     
     elif request.method == 'POST':
         """Create a new user"""
         try:
-            data = request.get_json()
-            
-            # Validate required fields
-            if not data or not all(k in data for k in ['name', 'email', 'password']):
-                return jsonify({
-                    'status': 'error',
-                    'message': 'Missing required fields: name, email, password'
-                }), 400
+            data = request.get_json(silent=True) or {}
+            try:
+                payload_in = UserCreateIn.model_validate(data)
+            except ValidationError as ve:
+                return jsonify(validation_error_payload(ve)), 422
             
             # Check for duplicate email
-            existing_user = User.query.filter_by(email=data['email']).first()
+            existing_user = User.query.filter_by(email=str(payload_in.email)).first()
             if existing_user:
                 return jsonify({
                     'status': 'error',
@@ -42,19 +53,16 @@ def users():
             
             # Create new user
             user = User(
-                name=data['name'],
-                email=data['email'],
-                password=data['password']
+                name=payload_in.name,
+                email=str(payload_in.email),
+                password=payload_in.password
             )
             
             db.session.add(user)
             db.session.commit()
             
-            return jsonify({
-                'status': 'success',
-                'message': 'User created successfully',
-                'user': user.to_dict()
-            }), 201
+            payload = UserCreatedOut(user=UserOut(**user.to_dict())).model_dump()
+            return jsonify(payload), 201
             
         except Exception as e:
             db.session.rollback()
@@ -69,32 +77,30 @@ def user_by_id(user_id):
     if request.method == 'GET':
         """Get user by ID"""
         try:
-            return jsonify({
-                'status': 'success',
-                'user': user.to_dict()
-            })
+            payload = UserSingleOut(user=UserOut(**user.to_dict())).model_dump()
+            return jsonify(payload)
         except Exception as e:
             return jsonify({'status': 'error', 'message': str(e)}), 500
     
     elif request.method == 'PATCH':
         """Update user (partial update allowed)"""
         try:
-            data = request.get_json()
-            
-            if not data:
-                return jsonify({
-                    'status': 'error',
-                    'message': 'No data provided'
-                }), 400
+            data = request.get_json(silent=True) or {}
+            try:
+                payload_in = UserUpdateIn.model_validate(data)
+            except ValidationError as ve:
+                return jsonify(validation_error_payload(ve)), 422
+            if payload_in.model_dump(exclude_none=True) == {}:
+                return jsonify({'status': 'error', 'message': 'No data provided'}), 400
             
             # Partial update - only update provided fields
-            if 'name' in data:
-                user.name = data['name']
+            if payload_in.name is not None:
+                user.name = payload_in.name
             
-            if 'email' in data:
+            if payload_in.email is not None:
                 # Check for duplicate email (excluding current user)
                 existing_user = User.query.filter(
-                    User.email == data['email'],
+                    User.email == str(payload_in.email),
                     User.id != user_id
                 ).first()
                 if existing_user:
@@ -102,18 +108,15 @@ def user_by_id(user_id):
                         'status': 'error',
                         'message': 'Email already exists'
                     }), 400
-                user.email = data['email']
+                user.email = str(payload_in.email)
             
-            if 'password' in data:
-                user.password = data['password']
+            if payload_in.password is not None:
+                user.password = payload_in.password
             
             db.session.commit()
             
-            return jsonify({
-                'status': 'success',
-                'message': 'User updated successfully',
-                'user': user.to_dict()
-            })
+            payload = UserUpdatedOut(user=UserOut(**user.to_dict())).model_dump()
+            return jsonify(payload)
             
         except Exception as e:
             db.session.rollback()
@@ -122,16 +125,14 @@ def user_by_id(user_id):
     elif request.method == 'DELETE':
         """Delete user (requires password confirmation)"""
         try:
-            data = request.get_json()
-            
-            if not data or 'password' not in data:
-                return jsonify({
-                    'status': 'error',
-                    'message': 'Password required for deletion'
-                }), 400
+            data = request.get_json(silent=True) or {}
+            try:
+                payload_in = UserDeleteIn.model_validate(data)
+            except ValidationError as ve:
+                return jsonify(validation_error_payload(ve)), 422
             
             # Verify password
-            if user.password != data['password']:
+            if user.password != payload_in.password:
                 return jsonify({
                     'status': 'error',
                     'message': 'Incorrect password'
@@ -141,10 +142,8 @@ def user_by_id(user_id):
             db.session.delete(user)
             db.session.commit()
             
-            return jsonify({
-                'status': 'success',
-                'message': 'User deleted successfully'
-            })
+            payload = UserDeletedOut().model_dump()
+            return jsonify(payload)
             
         except Exception as e:
             db.session.rollback()
