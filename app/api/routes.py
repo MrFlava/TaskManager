@@ -25,7 +25,8 @@ def index():
             '/api/users/',
             '/api/users/<int:user_id>/',
             '/api/projects/',
-            '/api/tasks/'
+            '/api/projects/<int:user_id>/users',
+            '/api/tasks/project/<int:project_id>/'
         ]
     })
 
