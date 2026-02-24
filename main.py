@@ -21,22 +21,6 @@ def create_app():
     # Register API Blueprint
     app.register_blueprint(api_bp)
 
-    # Root route redirects to API
-    @app.route('/')
-    def index():
-        return {
-            'message': 'Task Manager API',
-            'version': '1.0.0',
-            'api_base_url': '/api',
-            'endpoints': [
-                '/api/',
-                '/api/health',
-                '/api/test/users',
-                '/api/test/projects',
-                '/api/test/tasks'
-            ]
-        }
-
     return app
 
 
