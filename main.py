@@ -1,5 +1,6 @@
 from flask import Flask
 from flask_migrate import Migrate
+
 from app.models import db
 from app.api.routes import api_bp
 import os
