@@ -6,3 +6,4 @@ python-dotenv==1.0.0
 SQLAlchemy==2.0.21
 pydantic==2.6.1
 email-validator==2.1.0.post1
+pytest==8.1.1
