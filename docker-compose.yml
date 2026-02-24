@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: taskmanager_db
+    environment:
+      POSTGRES_DB: taskmanager
+      POSTGRES_USER: taskuser
+      POSTGRES_PASSWORD: taskpass
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - taskmanager_network
+
+  web:
+    build: .
+    container_name: taskmanager_web
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql://taskuser:taskpass@db:5432/taskmanager
+      FLASK_APP: main.py
+      FLASK_ENV: development
+      FLASK_DEBUG: 1
+    depends_on:
+      - db
+    volumes:
+      - .:/app
+    networks:
+      - taskmanager_network
+    command: flask run --host=0.0.0.0 --port=8001
+
+volumes:
+  postgres_data:
+
+networks:
+  taskmanager_network:
+    driver: bridge
