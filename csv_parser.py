@@ -1,9 +1,11 @@
 import csv
-import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Any, Optional
+
+from main import create_app
+from app.models import db, User as DBUser, Project as DBProject, Task as DBTask
 
 
 @dataclass
@@ -175,7 +177,7 @@ class CSVParsingService:
             
             return True
         except Exception as e:
-            print(f"✗ Error parsing {file_type}: {e}")
+            print(f"Error parsing {file_type}: {e}")
             return False
     
     def parse_all_files(self, file_paths: Dict[str, Path]) -> bool:
@@ -184,7 +186,7 @@ class CSVParsingService:
         
         for file_type, path in file_paths.items():
             if self.parse_file(file_type, path):
-                print(f"✓ Successfully parsed {len(getattr(self.data_store, file_type))} {file_type}")
+                print(f"Successfully parsed {len(getattr(self.data_store, file_type))} {file_type}")
             else:
                 success = False
         
@@ -225,6 +227,125 @@ class ConsoleReporter:
             print(f"First task: {task.title}")
 
 
+class DatabaseSaver:
+    """Class to handle saving parsed CSV data to database"""
+    
+    def __init__(self):
+        self.app = create_app()
+    
+    def save_users(self, users: List[User]) -> int:
+        """Save users to database"""
+        with self.app.app_context():
+            saved_count = 0
+            for user in users:
+                # Check if user already exists
+                existing_user = DBUser.query.filter_by(email=user.email).first()
+                if existing_user:
+                    print(f"User {user.email} already exists, skipping...")
+                    continue
+                
+                # Create new database user
+                db_user = DBUser(
+                    name=user.title,
+                    email=user.email,
+                    password=user.password
+                )
+                db.session.add(db_user)
+                saved_count += 1
+            
+            try:
+                db.session.commit()
+                print(f"Successfully saved {saved_count} users to database")
+                return saved_count
+            except Exception as e:
+                db.session.rollback()
+                print(f"Error saving users: {e}")
+                return 0
+    
+    def save_projects(self, projects: List[Project]) -> int:
+        """Save projects to database"""
+        with self.app.app_context():
+            saved_count = 0
+            for project in projects:
+                # Check if project already exists
+                existing_project = DBProject.query.filter_by(title=project.title).first()
+                if existing_project:
+                    print(f"Project {project.title} already exists, skipping...")
+                    continue
+                
+                # Create new database project
+                db_project = DBProject(
+                    title=project.title,
+                    description=project.description,
+                    order=project.order
+                )
+                db.session.add(db_project)
+                saved_count += 1
+            
+            try:
+                db.session.commit()
+                print(f"Successfully saved {saved_count} projects to database")
+                return saved_count
+            except Exception as e:
+                db.session.rollback()
+                print(f"Error saving projects: {e}")
+                return 0
+    
+    def save_tasks(self, tasks: List[Task]) -> int:
+        """Save tasks to database"""
+        with self.app.app_context():
+            saved_count = 0
+            for task in tasks:
+                # Check if task already exists
+                existing_task = DBTask.query.filter_by(title=task.title).first()
+                if existing_task:
+                    print(f"Task {task.title} already exists, skipping...")
+                    continue
+                
+                # Find project by title (assuming CSV task has project info)
+                # For now, we'll assign to first project or create a default one
+                project = DBProject.query.first()
+                if not project:
+                    print("No projects found in database, skipping tasks...")
+                    return 0
+                
+                # Create new database task
+                db_task = DBTask(
+                    title=task.title,
+                    description=task.description,
+                    order=task.order,
+                    project_id=project.id
+                )
+                db.session.add(db_task)
+                saved_count += 1
+            
+            try:
+                db.session.commit()
+                print(f"Successfully saved {saved_count} tasks to database")
+                return saved_count
+            except Exception as e:
+                db.session.rollback()
+                print(f"Error saving tasks: {e}")
+                return 0
+    
+    def save_all_data(self, users: List[User], projects: List[Project], tasks: List[Task]) -> Dict[str, int]:
+        """Save all parsed data to database"""
+        print("\n Saving data to database...")
+        print("-" * 40)
+        
+        results = {
+            'users': self.save_users(users),
+            'projects': self.save_projects(projects),
+            'tasks': self.save_tasks(tasks)
+        }
+        
+        print("-" * 40)
+        total_saved = sum(results.values())
+        print(f"Total records saved: {total_saved}")
+        
+        return results
+
+
 class CSVParserApp:
     """Main application class"""
     
@@ -233,6 +354,7 @@ class CSVParserApp:
         self.data_store = CSVDataStore()
         self.parsing_service = CSVParsingService(self.data_store)
         self.reporter = ConsoleReporter()
+        self.db_saver = DatabaseSaver()
     
     def get_file_paths(self) -> Dict[str, Path]:
         """Get file paths for all CSV files"""
@@ -242,7 +364,7 @@ class CSVParserApp:
             'tasks': self.base_path / "Task Manager - Users_Projects_Tasks - Tasks.csv"
         }
     
-    def run(self) -> bool:
+    def run(self, save_to_db: bool = False) -> bool:
         """Run the CSV parsing application"""
         self.reporter.print_header("Starting CSV parsing...")
         
@@ -254,6 +376,14 @@ class CSVParserApp:
         if success:
             print("All files parsed successfully!")
             self.reporter.print_summary(self.data_store)
+            
+            # Save to database if requested
+            if save_to_db:
+                self.db_saver.save_all_data(
+                    self.data_store.users,
+                    self.data_store.projects,
+                    self.data_store.tasks
+                )
         else:
             print("Some files failed to parse")
         
@@ -270,8 +400,17 @@ class CSVParserApp:
 
 def main() -> None:
     """Main entry point"""
+    import sys
+    
+    # Check command line arguments
+    save_to_db = '--save-to-db' in sys.argv or '-db' in sys.argv
+    
     app = CSVParserApp()
-    app.run()
+    
+    if save_to_db:
+        print("Database saving mode enabled")
+    
+    app.run(save_to_db=save_to_db)
 
 
 if __name__ == "__main__":
